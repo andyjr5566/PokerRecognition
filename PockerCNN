@@ -1,0 +1,138 @@
+import keras
+from keras import layers
+from keras.models import Sequential
+from keras.layers import Convolution2D
+from keras.layers import MaxPooling2D
+from keras.layers import Flatten
+from keras.layers import Dense
+from keras.layers import Dropout
+from keras.layers import BatchNormalization
+import matplotlib.pyplot as plt
+import os
+import cv2
+import numpy as np
+from keras.utils import np_utils
+
+
+CNNLable = ['S10','H3','S9','SJ','HA','SA','CJ','D3','C5','S5','DJ','H10','C2','S10','HJ','C4','SK','CK','C6','SK','D6','D5','C3','C10','H7','D10','C9','CQ','S7','SA','C6','H6','H10',
+       'D2','DQ','D4','H4','D4','S8','CA','DK','CQ','CK','S3','D7','C2','H3','HJ','CJ','S4','DQ','C4','DA','D8','C7','D2','D9','C3','HA','HK','SQ','H4',
+       'S2','C8','C7','H2','HQ','HQ','D3','S6','S3','SJ','H8','CA','D8','DJ','D9','H8','D10','H6','DA','S2','D5','H5','H7','S4','DK','H9','H2','C8',
+       'C9','D6','SQ','S6','HK','S9','S8','C5','H9','D7','S5','S7','H5','C10']
+
+def lableTransform(lableList):
+    v = ['A','2','3','4','5','6','7','8','9','10','J','Q','K']
+    labelValue = []
+    for i in CNNLable:
+        value = 0
+        value = v.index(i[1:])
+        if i[0] == 'H':
+            value += 13
+        elif i[0] == 'D':
+            value += 26
+        elif i[0] == 'C':
+            value += 39
+        labelValue.append(value)
+        
+    labelValue = np_utils.to_categorical(labelValue)
+    return labelValue
+
+def decode(num):
+    
+    if num // 13 == 0:
+        numID = 'S'+str(trans(num))
+    elif num // 13 == 1:
+        numID = 'H'+str(trans(num))
+    elif num // 13 == 2:
+        numID = 'D'+str(trans(num))
+    elif num // 13 == 3:
+        numID = 'C'+str(trans(num))
+    return numID
+
+def trans(num):
+    num += 1
+    if num % 13 == 1:
+        return 'A'
+    elif num % 13 == 11:
+        return 'J'
+    elif num % 13 == 12:
+        return 'Q'
+    elif num % 13 == 0:
+        return 'K'
+    else:
+        return str(num % 13)
+
+# Load image
+dirPath = r"cards"
+results = [f for f in os.listdir(dirPath) if os.path.isfile(os.path.join(dirPath, f))]
+images = []
+for img in results:
+    imgcv = cv2.imread(dirPath+'\\'+img)
+    imgcv = cv2.cvtColor(imgcv, cv2.COLOR_BGR2RGB)
+    images.append(imgcv)
+
+images = np.array(images) # Transform to array
+
+
+# ================ model disign ==========================
+
+height, width, channels = 46,34,3
+classifier=Sequential()
+
+# CNN layers
+classifier.add(Convolution2D(32,3,3,input_shape=(height, width, channels),activation='relu'))
+classifier.add(BatchNormalization())
+classifier.add(Convolution2D(32,3,3,activation='relu'))
+classifier.add(BatchNormalization())
+classifier.add(MaxPooling2D(pool_size=(2,2)))
+classifier.add(Convolution2D(32,3,3,activation='relu'))
+classifier.add(Convolution2D(32,3,3,activation='relu'))
+classifier.add(Convolution2D(32,3,3,activation='relu'))
+
+#flatten
+classifier.add(Flatten())
+
+classifier.add(Dense(output_dim=100,activation='relu'))
+classifier.add(Dropout(p=0.3))
+# output
+classifier.add(Dense(output_dim=52,activation='softmax'))
+# compile model
+classifier.compile(optimizer = 'adam', loss = 'categorical_crossentropy', metrics = ['accuracy'])
+# summary
+classifier.summary()
+
+# ==================== generate more data =======================
+'''
+By using keras image preprocessing to generate more data such as rotating and width, height
+shifting
+'''
+datagen = keras.preprocessing.image.ImageDataGenerator(
+    featurewise_center=True,
+    featurewise_std_normalization=True,
+    rotation_range=20,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    horizontal_flip=True)
+
+# ================ training =====================
+# set learning rate
+lr = keras.callbacks.ReduceLROnPlateau(min_lr=0.0000001)
+
+classifier.fit_generator(datagen.flow(x=images, y= lableTransform(CNNLable)),   
+                          epochs=500, steps_per_epoch=30,callbacks= [lr]) 
+
+# ============== evaluate model ==============
+
+loss, accuracy = classifier.evaluate(images,labelValue)
+print('test loss: ', loss)
+print('test accuracy: ', accuracy)
+
+# ============= plot figures ================
+for i ,j in zip(images,np.argmax(classifier.predict(images),axis=1)):
+    
+    print(decode(j))
+    print('Confident: ', np.max(classifier.predict(images)))
+    _, ax = plt.subplots(figsize=(4, 2))
+    ax.imshow(i)
+    plt.show()
+
+    
